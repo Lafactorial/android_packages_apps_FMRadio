@@ -19,6 +19,8 @@ package com.android.fmradio;
 import android.app.Activity;
 import android.app.FragmentManager;
 import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.app.Notification.Builder;
 import android.app.PendingIntent;
 import android.content.ComponentName;
@@ -77,7 +79,11 @@ public class FmRecordActivity extends Activity implements
     private int mRecordState = FmRecorder.STATE_INVALID;
     private boolean mRecordingStarted = false;
     private int mCurrentStation = FmUtils.DEFAULT_STATION;
-    private Notification.Builder mNotificationBuilder = null;
+
+    // Notification manager
+    private static Object mNotificationLock = new Object();
+    private NotificationManager mNotificationManager = null;
+    private NotificationChannel mNotificationChannel = null;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -173,7 +179,22 @@ public class FmRecordActivity extends Activity implements
     }
 
     private void updateRecordingNotification(long recordTime) {
-        if (mNotificationBuilder == null) {
+        synchronized (mNotificationLock) {
+            if (mNotificationManager == null) {
+                mNotificationManager = (NotificationManager)
+                    mContext.getSystemService(Context.NOTIFICATION_SERVICE);
+            }
+
+            if (mNotificationChannel == null) {
+                mNotificationChannel =
+                    new NotificationChannel(mService.NOTIFICATION_CHANNEL,
+                            mContext.getString(R.string.app_name),
+                            NotificationManager.IMPORTANCE_LOW);
+
+                mNotificationManager.createNotificationChannel(mNotificationChannel);
+            }
+
+            Notification.Builder notificationBuilder;
             Intent intent = new Intent(FM_STOP_RECORDING);
             intent.setClass(mContext, FmRecordActivity.class);
             intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -182,7 +203,7 @@ public class FmRecordActivity extends Activity implements
 
             Bitmap largeIcon = FmUtils.createNotificationLargeIcon(mContext,
                     FmUtils.formatStation(mCurrentStation));
-            mNotificationBuilder = new Builder(this)
+            notificationBuilder = new Builder(this, mService.NOTIFICATION_CHANNEL)
                     .setContentText(getText(R.string.record_notification_message))
                     .setShowWhen(false)
                     .setAutoCancel(true)
@@ -196,16 +217,16 @@ public class FmRecordActivity extends Activity implements
             cIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             PendingIntent contentPendingIntent = PendingIntent.getActivity(mContext, 0, cIntent,
                     PendingIntent.FLAG_UPDATE_CURRENT);
-            mNotificationBuilder.setContentIntent(contentPendingIntent);
-        }
-        // Format record time to show on title
-        Date date = new Date(recordTime);
-        SimpleDateFormat simpleDateFormat = new SimpleDateFormat("mm:ss", Locale.ENGLISH);
-        String time = simpleDateFormat.format(date);
+            notificationBuilder.setContentIntent(contentPendingIntent);
+            // Format record time to show on title
+            Date date = new Date(recordTime);
+            SimpleDateFormat simpleDateFormat = new SimpleDateFormat("mm:ss", Locale.ENGLISH);
+            String time = simpleDateFormat.format(date);
 
-        mNotificationBuilder.setContentTitle(time);
-        if (mService != null) {
-            mService.showRecordingNotification(mNotificationBuilder.build());
+            notificationBuilder.setContentTitle(time);
+            if (mService != null) {
+                mService.showRecordingNotification(notificationBuilder.build());
+            }
         }
     }
 
